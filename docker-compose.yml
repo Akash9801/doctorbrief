@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: doctorbrief-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-doctorbrief}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doctorbrief}
+      POSTGRES_DB: ${POSTGRES_DB:-doctorbrief}
+    ports:
+      - "5432:5432"
+    volumes:
+      - doctorbrief_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doctorbrief"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: doctorbrief-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://doctorbrief:doctorbrief@postgres:5432/doctorbrief
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_TRANSCRIBE_MODEL: ${OPENAI_TRANSCRIBE_MODEL:-gpt-transcribe}
+      OPENAI_CLINICAL_MODEL: ${OPENAI_CLINICAL_MODEL:-gpt-4o-mini}
+      ALLOW_DEV_AI_MOCK: ${ALLOW_DEV_AI_MOCK:-false}
+      SECRET_KEY: ${SECRET_KEY:-dev-change-me-in-production-secret-key-min-32-chars}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  doctorbrief_pgdata:

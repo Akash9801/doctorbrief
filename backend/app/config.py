@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str = "sqlite:///./doctorbrief_dev.db"
 
-    WHISPER_MODEL_SIZE: str = "medium"
+    WHISPER_MODEL_SIZE: str = "base"
     WHISPER_DEVICE: str = "cpu"
     WHISPER_COMPUTE_TYPE: str = "int8"
     WHISPER_TIMEOUT_SECONDS: int = 120

@@ -292,24 +292,23 @@ export function AudioRecorder({
         <div>
           <div className="flex items-center gap-2">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                recorderState === "recording"
+              className={`h-2.5 w-2.5 rounded-full ${recorderState === "recording"
                   ? "animate-pulse bg-red-600"
                   : recorderState === "paused"
-                  ? "bg-amber-500"
-                  : recorderState === "stopped"
-                  ? "bg-emerald-600"
-                  : "bg-slate-300"
-              }`}
+                    ? "bg-amber-500"
+                    : recorderState === "stopped"
+                      ? "bg-emerald-600"
+                      : "bg-slate-300"
+                }`}
             />
             <span className="text-sm font-semibold text-slate-900">
               {recorderState === "recording"
                 ? "Recording in progress"
                 : recorderState === "paused"
-                ? "Recording paused"
-                : recorderState === "stopped"
-                ? "Recording ready for transcription"
-                : "Microphone ready"}
+                  ? "Recording paused"
+                  : recorderState === "stopped"
+                    ? "Recording ready for transcription"
+                    : "Microphone ready"}
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -408,7 +407,7 @@ export function AudioRecorder({
         <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3.5 text-sm text-sky-900">
           <div className="flex items-center gap-2 font-medium">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Uploading audio and generating transcript with OpenAI...</span>
+            <span>Uploading audio and transcribing...</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-sky-200">
             <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />

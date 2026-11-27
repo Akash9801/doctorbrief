@@ -79,7 +79,7 @@ async def transcribe_consultation_audio(
 ):
     settings = get_settings()
     audio_bytes = await file.read()
-    return consultation_service.process_transcription(
+    return await consultation_service.process_transcription(
         db=db,
         doctor_id=current_doctor.id,
         consultation_id=consultation_id,

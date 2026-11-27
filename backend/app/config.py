@@ -16,10 +16,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str = "sqlite:///./doctorbrief_dev.db"
 
-    OPENAI_API_KEY: str = ""
-    OPENAI_CLINICAL_MODEL: str = "gpt-4o-mini"
-    ALLOW_DEV_AI_MOCK: bool = False
+    WHISPER_MODEL_SIZE: str = "medium"
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
+    WHISPER_TIMEOUT_SECONDS: int = 120
 
+    # Optional legacy keys (not required for local processing)
+    OPENAI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-secret"

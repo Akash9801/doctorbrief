@@ -114,7 +114,7 @@ export function TranscriptReviewPage() {
       />
 
       {aiError && (
-        <Alert variant="destructive" title="AI Processing Error">
+        <Alert variant="destructive" title="Clinical Processing Error">
           {aiError}
         </Alert>
       )}

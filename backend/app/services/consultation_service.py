@@ -1,7 +1,11 @@
+import asyncio
+import logging
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
+from starlette.concurrency import run_in_threadpool
 
 from app.ai.client import (
     AIServiceError,
@@ -9,6 +13,7 @@ from app.ai.client import (
     generate_soap_note_draft,
     transcribe_audio_bytes,
 )
+from app.config import get_settings
 from app.models.clinical_extraction import ClinicalExtraction
 from app.models.clinical_note import ClinicalNote
 from app.models.consultation import Consultation
@@ -26,7 +31,9 @@ from app.schemas.note import ClinicalNoteResponse
 from app.schemas.transcript import TranscriptResponse, TranscriptUpdateRequest
 from app.services.patient_service import get_owned_patient, to_patient_response
 
-ALLOWED_AUDIO_EXTENSIONS = {".webm", ".wav", ".mp3", ".m4a", ".ogg", ".oga", ".mp4", ".mpeg", ".mpga"}
+logger = logging.getLogger("doctorbrief.consultation")
+
+ALLOWED_AUDIO_EXTENSIONS = {".webm", ".wav", ".mp3", ".m4a", ".ogg", ".oga", ".mp4", ".mpeg", ".mpga", ".flac"}
 ALLOWED_AUDIO_CONTENT_TYPES = {
     "audio/webm",
     "video/webm",
@@ -40,8 +47,23 @@ ALLOWED_AUDIO_CONTENT_TYPES = {
     "audio/x-m4a",
     "audio/ogg",
     "application/ogg",
+    "audio/oga",
+    "audio/flac",
+    "audio/x-flac",
     "audio/aac",
 }
+
+
+def _commit_with_rollback(db: Session, context: str) -> None:
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Database transaction failed during %s", context)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="A database error occurred while saving consultation data. Please retry.",
+        ) from exc
 
 
 def utcnow() -> datetime:
@@ -238,7 +260,7 @@ def validate_audio_upload(filename: str, content_type: str | None, audio_bytes: 
         )
 
 
-def process_transcription(
+async def process_transcription(
     db: Session,
     doctor_id: str,
     consultation_id: str,
@@ -265,18 +287,39 @@ def process_transcription(
             processing_status="PENDING",
         )
         db.add(transcript)
-        db.flush()
+        try:
+            db.flush()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.exception("Database error initializing transcript record")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="A database error occurred while preparing transcription.",
+            ) from exc
 
     consultation.audio_filename = filename
     if duration_seconds is not None:
         consultation.audio_duration_seconds = duration_seconds
 
+    settings = get_settings()
     try:
-        result = transcribe_audio_bytes(audio_bytes, filename, content_type)
+        result = await asyncio.wait_for(
+            run_in_threadpool(transcribe_audio_bytes, audio_bytes, filename, content_type),
+            timeout=settings.WHISPER_TIMEOUT_SECONDS,
+        )
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning("Local Whisper transcription timed out after %ss", settings.WHISPER_TIMEOUT_SECONDS)
+        transcript.processing_status = "FAILED"
+        transcript.error_message = "Transcription timed out. Please try a shorter recording."
+        _commit_with_rollback(db, "transcription timeout status update")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Audio transcription timed out. Please try a shorter recording.",
+        ) from exc
     except AIServiceError as exc:
         transcript.processing_status = "FAILED"
         transcript.error_message = exc.message
-        db.commit()
+        _commit_with_rollback(db, "transcription failure status update")
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     transcript.original_text = result.text
@@ -291,7 +334,7 @@ def process_transcription(
     if consultation.ended_at is None:
         consultation.ended_at = utcnow()
 
-    db.commit()
+    _commit_with_rollback(db, "saving completed transcript")
     db.refresh(transcript)
     return TranscriptResponse.model_validate(transcript)
 
@@ -311,7 +354,7 @@ def update_transcript_text(
     consultation.transcript.edited_text = payload.edited_text.strip()
     if payload.language is not None:
         consultation.transcript.language = payload.language.strip()
-    db.commit()
+    _commit_with_rollback(db, "updating transcript text")
     db.refresh(consultation.transcript)
     return TranscriptResponse.model_validate(consultation.transcript)
 
@@ -358,7 +401,7 @@ def run_clinical_extraction(
     if consultation.status in {"IN_PROGRESS", "TRANSCRIBED"}:
         consultation.status = "EXTRACTED"
 
-    db.commit()
+    _commit_with_rollback(db, "saving clinical extraction")
     db.refresh(extraction)
     return ClinicalExtractionResponse.model_validate(extraction)
 
@@ -410,6 +453,6 @@ def generate_soap_for_consultation(
         is_mock=soap_result.is_mock,
     )
     db.add(note)
-    db.commit()
+    _commit_with_rollback(db, "saving generated SOAP note")
     db.refresh(note)
     return ClinicalNoteResponse.model_validate(note)
